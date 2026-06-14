@@ -1,0 +1,13 @@
+target_object: "couch"
+prompts:
+  - id: 0
+    type: "semantic_relevance"
+    text: "large couch sofa in living room facing a TV, lounge seating with cushions in entertainment area, sectional sofa in family room"
+    hypothesis: "Couches typically in living rooms"
+    initial_weight: 0.5
+  - id: 1
+    type: "information_gain"
+    text: "open corridor with multiple doorways leading to unexplored rooms, hallway junction with several doors, unvisited room entrances"
+    hypothesis: "High-connectivity passages yield coverage"
+    initial_weight: 0.5
+object_map_prompt_id: 0

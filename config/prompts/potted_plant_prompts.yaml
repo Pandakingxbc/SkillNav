@@ -1,0 +1,20 @@
+# Two-prompt fusion config for "potted plant"
+# SR (id=0): target-direct, drives ObjectMap confidence
+# IG (id=1): exploration-oriented, drives broad coverage
+
+target_object: "potted plant"
+
+prompts:
+  - id: 0
+    type: "semantic_relevance"
+    text: "potted plant in living room corner, indoor houseplant near window, decorative plant on side table or floor"
+    hypothesis: "Potted plants commonly placed in living rooms, bedrooms, and near windows for natural light"
+    initial_weight: 0.5
+
+  - id: 1
+    type: "information_gain"
+    text: "open corridor with multiple doorways leading to unexplored rooms, hallway junction with several doors, unvisited room entrances"
+    hypothesis: "High-connectivity passages typically yield large coverage gain"
+    initial_weight: 0.5
+
+object_map_prompt_id: 0

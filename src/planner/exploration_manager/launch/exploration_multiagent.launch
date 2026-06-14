@@ -1,0 +1,115 @@
+<launch>
+  <!-- Multi-Agent Exploration Launch File -->
+  <!-- Reuses algorithm.xml for the shared exploration_node + tsp_solver,
+       then layers on VLM agents and an RViz config. Target object is set
+       dynamically by habitat_evaluation.py via /target_object. -->
+
+  <!-- Map size -->
+  <arg name="map_size_x" default="80.0"/>
+  <arg name="map_size_y" default="80.0"/>
+
+  <!-- Real-world mode -->
+  <arg name="is_real_world" default="false"/>
+
+  <!-- Enable Multi-ValueMap system -->
+  <arg name="enable_multi_valuemap" default="true"/>
+
+  <!-- Topics -->
+  <arg name="odom_topic"         default="/habitat/odom"/>
+  <arg name="sensor_pose_topic"  default="/habitat/sensor_pose"/>
+  <arg name="depth_topic"        default="/habitat/camera_depth"/>
+  <arg name="rgb_topic"          default="/habitat/camera_rgb"/>
+
+  <!-- Conda env python: needed by Python ROS nodes that import openai / cv2 / etc.
+       Declared early so any node below can reference it via $(arg conda_python). -->
+  <arg name="conda_python" default="/home/yangz/miniconda3/envs/skillnav/bin/python3"/>
+
+  <!-- Shared exploration_node + tsp_solver -->
+  <include file="$(find exploration_manager)/launch/algorithm.xml">
+    <arg name="is_real_world_"      value="$(arg is_real_world)"/>
+    <arg name="map_size_x_"         value="$(arg map_size_x)"/>
+    <arg name="map_size_y_"         value="$(arg map_size_y)"/>
+    <arg name="odometry_topic_"     value="$(arg odom_topic)"/>
+    <arg name="sensor_pose_topic_"  value="$(arg sensor_pose_topic)"/>
+    <arg name="depth_topic_"        value="$(arg depth_topic)"/>
+
+    <!-- Depth camera intrinsics -->
+    <arg name="cx_" value="320"/>
+    <arg name="cy_" value="240"/>
+    <arg name="fx_" value="388.1910413097385"/>
+    <arg name="fy_" value="422.0475153598262"/>
+
+    <!-- Multi-agent overrides: semantic policy + Multi-ValueMap on,
+         Voronoi visualisation on for the multi-agent RViz. -->
+    <!-- 0=DISTANCE  1=SEMANTIC  2=HYBRID  3=TSP_DIST  4=HFTN (design memo C1) -->
+    <arg name="exploration_policy_"               value="4"/>
+    <arg name="enable_multi_valuemap_"            value="$(arg enable_multi_valuemap)"/>
+    <arg name="voronoi_show_edges_"               value="true"/>
+    <arg name="voronoi_show_node_frontier_links_" value="true"/>
+  </include>
+
+  <!-- BLIP2-ITM Client (DISABLED) — superseded by habitat_evaluation.py which
+       publishes target-aware [SR, IG] cosines directly to /blip2_itm/scores.
+       Re-enable only if running outside Habitat with a generic prompt config. -->
+  <!--
+  <node pkg="plan_env" name="blip2_itm_client" type="blip2_itm_client.py" output="screen" if="$(arg enable_multi_valuemap)">
+    <param name="blip_url" value="http://localhost:12182" type="string"/>
+    <remap from="/camera/rgb/image_raw" to="$(arg rgb_topic)"/>
+  </node>
+  -->
+
+  <!-- VLM Safe Agent Node -->
+  <arg name="use_vlm_safe_agent" default="true"/>
+  <node pkg="plan_env" name="vlm_safe_agent_node" type="vlm_safe_agent_node.py" output="screen" if="$(arg use_vlm_safe_agent)">
+    <param name="vlm_model" value="qwen3-vl-plus" type="string"/>
+    <param name="cache_ttl" value="30.0" type="double"/>
+    <param name="max_calls_per_minute" value="10" type="int"/>
+    <param name="min_escape_attempts" value="2" type="int"/>
+    <param name="image_max_age" value="2.0" type="double"/>
+    <remap from="/habitat/camera_rgb" to="$(arg rgb_topic)"/>
+  </node>
+
+  <!-- VLM Memory Agent Node (single-shot verifier, 2026-05-19).
+       Launch-prefix pins the interpreter to the conda `skillnav` env because
+       the node imports `openai` and `cv2`. -->
+  <arg name="use_vlm_memory_agent" default="true"/>
+  <node pkg="plan_env" name="vlm_memory_agent_node" type="vlm_memory_agent_node.py"
+        output="screen" if="$(arg use_vlm_memory_agent)"
+        launch-prefix="$(arg conda_python)">
+    <param name="vlm_model" value="qwen3-vl-plus" type="string"/>
+    <param name="image_max_age" value="2.0" type="double"/>
+    <param name="frame_cache_size" value="20" type="int"/>
+    <param name="frame_max_age" value="6.0" type="double"/>
+    <param name="num_frames_to_send" value="3" type="int"/>
+    <param name="frame_min_gap_sec" value="0.3" type="double"/>
+    <param name="api_timeout" value="30.0" type="double"/>
+    <param name="api_max_retries" value="1" type="int"/>
+    <remap from="/habitat/camera_rgb" to="$(arg rgb_topic)"/>
+  </node>
+
+  <!-- Strategic Agent LLM bridge: translates C++ StrategicAgent requests
+       into DeepSeek API calls. Reads DEEPSEEK_API_KEY from environment.
+       Falls back to a deterministic rule when offline / no key.
+
+       launch-prefix pins the interpreter to the conda `skillnav` env's
+       python — system /usr/bin/python3 typically does not have the
+       `openai` package. If the path below does not exist on your
+       machine, install openai globally OR adjust this prefix. -->
+  <arg name="use_strategic_llm" default="true"/>
+  <!-- conda_python declared near top of file -->
+  <node pkg="plan_env" name="strategic_agent_node" type="strategic_agent_node.py"
+        output="screen" if="$(arg use_strategic_llm)"
+        launch-prefix="$(arg conda_python)">
+    <param name="model" value="deepseek-chat" type="string"/>
+    <param name="temperature" value="0.3" type="double"/>
+    <param name="timeout_sec" value="8.0" type="double"/>
+  </node>
+
+  <!-- RViz visualization (optional - set launch_rviz:=true to enable) -->
+  <arg name="launch_rviz" default="false"/>
+  <node pkg="rviz" name="rviz" type="rviz"
+        args="-d $(find exploration_manager)/config/SkillNav_MultiAgent.rviz"
+        if="$(arg launch_rviz)"
+        required="false"/>
+
+</launch>
